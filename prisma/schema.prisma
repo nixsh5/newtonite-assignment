@@ -1,0 +1,88 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum Status {
+  OPEN
+  IN_PROGRESS
+  PENDING_APPROVAL
+  RESOLVED
+  CLOSED
+}
+
+enum Role {
+  MEMBER
+  LEAD
+  ADMIN
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  name          String
+  role          Role       @default(MEMBER)
+  teamId        String?
+  team          Team?      @relation(fields: [teamId], references: [id])
+  assignedItems WorkItem[] @relation("Assignee")
+  auditLogs     AuditLog[]
+  createdAt     DateTime   @default(now())
+}
+
+model Team {
+  id      String     @id @default(cuid())
+  name    String     @unique
+  members User[]
+  items   WorkItem[]
+}
+
+model WorkItem {
+  id          String     @id @default(cuid())
+  title       String
+  description String
+  priority    Priority   @default(MEDIUM)
+  status      Status     @default(OPEN)
+  version     Int        @default(1) // Optimistic locking version counter
+
+  teamId      String
+  team        Team       @relation(fields: [teamId], references: [id])
+  assigneeId  String?
+  assignee    User?      @relation("Assignee", fields: [assigneeId], references: [id])
+
+  auditLogs   AuditLog[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([status, priority])
+  @@index([teamId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  workItemId String
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  action     String   // e.g. "CLAIMED", "STATUS_CHANGE", "UPDATED"
+  details    Json?    // Stores { previous: ..., current: ... }
+  createdAt  DateTime @default(now())
+
+  @@index([workItemId])
+}
+
+model IdempotencyRecord {
+  key       String   @id
+  response  Json
+  createdAt DateTime @default(now())
+}
